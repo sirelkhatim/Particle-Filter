@@ -106,8 +106,8 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
     double obs_y = observations[j].y;
    for(uint i = 0; i < predicted.size(); i++){
     double predicted_x = predicted[i].x;
-    double predicted_y = predicted[j].y;
-    int predicted_id = predicted[j].id;
+    double predicted_y = predicted[i].y;
+    int predicted_id = predicted[i].id;
     double cur_dist = dist(obs_x, obs_y, predicted_x, predicted_y);
     if(cur_dist < min_dist){
     min_dist = cur_dist;
@@ -185,7 +185,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
         double y = obs_mapped.y;
         double assoc_x = associated_landmark.x;
         double assoc_y = associated_landmark.y;
-        particles[i].weight *= pow(M_E, -((pow(y - assoc_y,2) / (2* pow(std_landmark[1], 2))) + (pow(x - assoc_x,2) / (2* pow(std_landmark[0], 2))))) / (2 * M_PI * std_landmark[0] * std_landmark[1]);
+        particles[i].weight *= exp(pow(M_E, -((pow(y - assoc_y,2) / (2* pow(std_landmark[1], 2))) + (pow(x - assoc_x,2) / (2* pow(std_landmark[0], 2)))))) / (2 * M_PI * std_landmark[0] * std_landmark[1]);
     }
     
     //update weight using multivariate gaussian distribution
