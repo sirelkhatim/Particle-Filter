@@ -20,6 +20,7 @@
 
 using std::string;
 using std::vector;
+ std::default_random_engine gen;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
   /**
@@ -30,10 +31,33 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 0;  // TODO: Set the number of particles
+ 
+  
+  double std_x, std_y, std_theta;
+    
+  weights.resize(num_particles);
+  std_x = std[0];
+  std_y = std[1];
+  std_theta = std[2];
+  
+  std::normal_distribution<double> dist_x(x, std_x);
+  std::normal_distribution<double> dist_y(y, std_y);
+  std::normal_distribution<double> dist_theta(theta, std_theta);
 
+  
+  num_particles = 100;  // TODO: Set the number of particles
+
+  for(unsigned int i = 0; i< num_particles; i++){
+    Particle particle;
+    particle.id = i;
+    particle.x = dist_x(gen);
+    particle.y = dist_y(gen);
+    particle.theta = dist_theta(gen);
+    particle.weight = 1;
+    particles.push_back(particle);
 }
-
+is_initialized= true;
+}
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
                                 double velocity, double yaw_rate) {
   /**
@@ -43,6 +67,25 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
+  
+    std::normal_distribution<double> dist_x(0.0, std_pos[0]);
+    std::normal_distribution<double> dist_y(0.0, std_pos[1]);
+    std::normal_distribution<double> dist_theta(0.0, std_pos[2]);
+    
+    for(int i = 0; i < num_particles; i++){
+        double theta = particles[i].theta;
+        if(fabs(theta) < 0.0001){
+            particles[i].x += + velocity * delta_t * cos(theta);
+            particles[i].y +=  velocity * delta_t * sin(theta);
+        }else{
+        particles[i].x += + velocity/yaw_rate * (sin(theta + yaw_rate*delta_t) - sin(theta));
+        particles[i].y +=  velocity/yaw_rate * (sin(theta + yaw_rate*delta_t) - cos(theta + yaw_rate * delta_t));
+        particles[i].theta = particles[i].theta + particles[i].theta*delta_t;
+        }
+        particles[i].x += dist_x(gen);
+        particles[i].y += dist_y(gen);
+        particles[i].theta += dist_theta(gen);
+    }
 
 }
 
@@ -56,7 +99,23 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   probably find it useful to implement this method and use it as a helper 
    *   during the updateWeights phase.
    */
-
+    for(int j = 0; j < observations.size(); j++){
+    int map_id = -1;
+    double min_dist = std::numeric_limits<double>::max();
+    double obs_x = observations[j].x;
+    double obs_y = observations[j].y;
+   for(uint i = 0; i < predicted.size(); i++){
+    double predicted_x = predicted[i].x;
+    double predicted_y = predicted[j].y;
+    int predicted_id = predicted[j].id;
+    double cur_dist = dist(obs_x, obs_y, predicted_x, predicted_y);
+    if(cur_dist < min_dist){
+    min_dist = cur_dist;
+    map_id = predicted_id;
+    }
+   }
+    observations[j].id = map_id;
+  }
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -75,7 +134,63 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
+ 
+    for(int i = 0; i < num_particles; i++){
+    Particle p = particles[i];
+    // transform observations to map coordinates
+    vector<LandmarkObs> map_obs;
+   
+    for(int j = 0; j < observations.size(); j++){
+        LandmarkObs obs = observations[i];
+        LandmarkObs obs_trans = LandmarkObs();
+        obs_trans.x = p.x + obs_trans.x*cos(p.theta) - sin(p.theta)*obs_trans.y;
+        obs_trans.y = p.y+ obs_trans.x*sin(p.theta) + cos(p.theta)* obs_trans.y;
+        map_obs.push_back(obs_trans);
+    }
+    
+    vector<LandmarkObs> acceptable_landmarks;
+    
+    for(int z = 0; z< map_landmarks.landmark_list.size(); z++){
+    
+        if(dist(p.x,p.y, map_landmarks.landmark_list[z].x_f, map_landmarks.landmark_list[z].y_f) > sensor_range){
+            continue;
+        }
+        
+        LandmarkObs landmark;
+        landmark.x = map_landmarks.landmark_list[z].x_f;
+        landmark.y = map_landmarks.landmark_list[z].y_f;
+        landmark.id = map_landmarks.landmark_list[z].id_i;
+        acceptable_landmarks.push_back(landmark);
+   
+    }
+    //find acceptable landmarks for each particle
+    // get associated landmarks using dataAssociation
+    dataAssociation(acceptable_landmarks,map_obs);
+    //multiply probability of each landmark association
+    particles[i].weight = 1.0;
 
+    for(int w = 0; w < map_obs.size(); w++){
+        LandmarkObs obs_mapped = map_obs[w];
+        LandmarkObs associated_landmark;
+
+        for(int k = 0; k< acceptable_landmarks.size();k++){
+            if(acceptable_landmarks[k].id == obs_mapped.id){
+            associated_landmark = acceptable_landmarks[k];
+            break;
+            }
+        }
+        
+        //update weight with multivariate
+        double x = obs_mapped.x;
+        double y = obs_mapped.y;
+        double assoc_x = associated_landmark.x;
+        double assoc_y = associated_landmark.y;
+        particles[i].weight *= pow(M_E, -((pow(y - assoc_y,2) / (2* pow(std_landmark[1], 2))) + (pow(x - assoc_x,2) / (2* pow(std_landmark[0], 2))))) / (2 * M_PI * std_landmark[0] * std_landmark[1]);
+    }
+    
+    //update weight using multivariate gaussian distribution
+
+    }
 }
 
 void ParticleFilter::resample() {
@@ -85,6 +200,17 @@ void ParticleFilter::resample() {
    * NOTE: You may find std::discrete_distribution helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
+    
+    std::discrete_distribution<int> dist(weights.begin(), weights.end());
+    std::vector<Particle> weighted_sample(num_particles);
+
+    for(int i = 0; i < num_particles; i++){
+        int j = dist(gen);
+        weighted_sample.at(i) = particles.at(j);
+    }
+
+    particles = weighted_sample;
+    return;
 
 }
 
