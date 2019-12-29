@@ -35,7 +35,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   
   double std_x, std_y, std_theta;
     
-  weights.resize(num_particles);
+  weights.resize(num_particles,1.0);
   std_x = std[0];
   std_y = std[1];
   std_theta = std[2];
@@ -57,6 +57,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
     particles.push_back(particle);
 }
 is_initialized= true;
+
 }
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
                                 double velocity, double yaw_rate) {
@@ -74,7 +75,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
     
     for(int i = 0; i < num_particles; i++){
         double theta = particles[i].theta;
-        if(fabs(theta) < 0.0001){
+        if(fabs(theta) < 0.001){
             particles[i].x += + velocity * delta_t * cos(theta);
             particles[i].y +=  velocity * delta_t * sin(theta);
         }else{
@@ -100,21 +101,23 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   during the updateWeights phase.
    */
     for(int j = 0; j < observations.size(); j++){
-    int map_id = -1;
-    double min_dist = std::numeric_limits<double>::max();
-    double obs_x = observations[j].x;
-    double obs_y = observations[j].y;
-   for(uint i = 0; i < predicted.size(); i++){
-    double predicted_x = predicted[i].x;
-    double predicted_y = predicted[i].y;
-    int predicted_id = predicted[i].id;
-    double cur_dist = dist(obs_x, obs_y, predicted_x, predicted_y);
-    if(cur_dist < min_dist){
-    min_dist = cur_dist;
-    map_id = predicted_id;
-    }
-   }
-    observations[j].id = map_id;
+        int map_id = -1;
+        double min_dist = std::numeric_limits<double>::max();
+        double obs_x = observations[j].x;
+        double obs_y = observations[j].y;
+        for(uint i = 0; i < predicted.size(); i++){
+            double predicted_x = predicted[i].x;
+            double predicted_y = predicted[i].y;
+            int predicted_id = predicted[i].id;
+            double cur_dist = dist(obs_x, obs_y, predicted_x, predicted_y);
+            if(cur_dist < min_dist){
+                min_dist = cur_dist;
+                map_id= predicted_id;
+        }
+       }
+
+       observations[j].id = map_id;
+    
   }
 }
 
@@ -141,10 +144,11 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     vector<LandmarkObs> map_obs;
    
     for(int j = 0; j < observations.size(); j++){
-        LandmarkObs obs = observations[i];
+        LandmarkObs obs = observations[j];
         LandmarkObs obs_trans = LandmarkObs();
-        obs_trans.x = p.x + obs_trans.x*cos(p.theta) - sin(p.theta)*obs_trans.y;
-        obs_trans.y = p.y+ obs_trans.x*sin(p.theta) + cos(p.theta)* obs_trans.y;
+        obs_trans.x = p.x + obs.x*cos(p.theta) - sin(p.theta)*obs.y;
+        obs_trans.y = p.y+ obs.x*sin(p.theta) + cos(p.theta)* obs.y;
+        obs_trans.id = obs.id;
         map_obs.push_back(obs_trans);
     }
     
@@ -167,7 +171,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     // get associated landmarks using dataAssociation
     dataAssociation(acceptable_landmarks,map_obs);
     //multiply probability of each landmark association
-    particles[i].weight = 1.0;
+    double probability= 1.0;
 
     for(int w = 0; w < map_obs.size(); w++){
         LandmarkObs obs_mapped = map_obs[w];
@@ -185,9 +189,15 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
         double y = obs_mapped.y;
         double assoc_x = associated_landmark.x;
         double assoc_y = associated_landmark.y;
-        particles[i].weight *= exp(pow(M_E, -((pow(y - assoc_y,2) / (2* pow(std_landmark[1], 2))) + (pow(x - assoc_x,2) / (2* pow(std_landmark[0], 2)))))) / (2 * M_PI * std_landmark[0] * std_landmark[1]);
+        double dx = x - assoc_x;
+        double dy = y - assoc_y;
+        
+        probability *= 1.0/(2*M_PI*std_landmark[1])*exp(-dx*dx/ (2*std_landmark[0]*std_landmark[0]))*exp(-dy*dy/(2*std_landmark[1]*std_landmark[1]));
+        std::cout<<probability;
+
     }
-    
+    weights[i] = probability;
+    particles[i].weight = probability;
     //update weight using multivariate gaussian distribution
 
     }
