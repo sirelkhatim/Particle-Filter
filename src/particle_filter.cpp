@@ -44,7 +44,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   std::normal_distribution<double> dist_theta(theta, std_theta);
 
   
-  num_particles = 100;  // TODO: Set the number of particles
+  num_particles = 1024;  // TODO: Set the number of particles
     
   particles.clear();
   for(unsigned int i = 0; i< num_particles; i++){
@@ -76,7 +76,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
     
     for(int i = 0; i < num_particles; i++){
         double theta = particles[i].theta;
-        if(fabs(yaw_rate) < 0.0001){
+        if(fabs(yaw_rate) < 0.001){
             particles[i].x += velocity * delta_t * cos(theta);
             particles[i].y +=  velocity * delta_t * sin(theta);
         }else{
@@ -101,16 +101,17 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   probably find it useful to implement this method and use it as a helper 
    *   during the updateWeights phase.
    */
+
     for(int j = 0; j < observations.size(); j++){
         int map_id = -1;
-        double min_dist = std::numeric_limits<double>::max();
+        double min_dist = INFINITY;
         double obs_x = observations[j].x;
         double obs_y = observations[j].y;
         for(int i = 0; i < predicted.size(); i++){
             double predicted_x = predicted[i].x;
             double predicted_y = predicted[i].y;
             int predicted_id = predicted[i].id;
-            double cur_dist = dist( predicted_x, predicted_y,obs_x, obs_y);
+            double cur_dist = dist( obs_x, obs_y,predicted_x, predicted_y);
             if(cur_dist < min_dist){
                 min_dist = cur_dist;
                 map_id= predicted_id;
@@ -192,7 +193,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
         double dx = x - assoc_x;
         double dy = y - assoc_y;
         
-        probability *= 1.0/(2*M_PI*std_landmark[0]*std_landmark[1])*exp(-dx*dx/ (2*std_landmark[0]*std_landmark[0]))*exp(-dy*dy/(2*std_landmark[1]*std_landmark[1]));
+        probability *= 1.0/(2*M_PI*std_landmark[0]*std_landmark[1])*exp(-dx*dx/ (2*std_landmark[0]*std_landmark[0]) -dy*dy/(2*std_landmark[1]*std_landmark[1]));
         
 
     }
@@ -222,7 +223,7 @@ void ParticleFilter::resample() {
         weighted_sample.at(i) = particles.at(j);
     }
 
-    particles = weighted_sample;
+    particles = move(weighted_sample);
 
 }
 
